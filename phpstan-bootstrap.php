@@ -1,3 +1,3 @@
 <?php
 
-define('ROOT_DIR', __DIR__);
+define('APPLICATION_ROOT_DIR', __DIR__);
