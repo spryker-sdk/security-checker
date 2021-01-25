@@ -15,12 +15,12 @@ class Result implements Countable
     /**
      * @var int
      */
-    private $count;
+    protected $count;
 
     /**
      * @var string
      */
-    private $vulnerabilities;
+    protected $vulnerabilities;
 
     /**
      * @param int $count

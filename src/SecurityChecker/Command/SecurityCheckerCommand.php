@@ -17,6 +17,9 @@ use Symfony\Component\Process\Process;
 
 class SecurityCheckerCommand extends Command
 {
+    protected const CODE_SUCCESS = 0;
+    protected const CODE_ERROR = 1;
+
     protected const COMMAND_NAME = 'security:check';
 
     protected const BINARY_CHECKER = 'https://github.com/fabpot/local-php-security-checker/releases/download/v1.0.0/local-php-security-checker_1.0.0_linux_amd64';
@@ -42,7 +45,6 @@ class SecurityCheckerCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $this->loadFile();
-        $this->changeFileMode();
         $commandOutput = $this->runCommand();
         $commandOutput = $this->markFalsePositiveResults($commandOutput);
 
@@ -58,8 +60,12 @@ class SecurityCheckerCommand extends Command
      */
     protected function loadFile(): void
     {
-        $process = new Process(['wget', static::BINARY_CHECKER, '-O', static::FILE_NAME]);
-        $process->run();
+        if (!file_exists(static::FILE_NAME)) {
+            $process = new Process(['wget', static::BINARY_CHECKER, '-O', static::FILE_NAME]);
+            $process->run();
+
+            $this->changeFileMode();
+        }
     }
 
     /**
@@ -130,19 +136,19 @@ class SecurityCheckerCommand extends Command
     protected function convertResultToExitCode(Result $result, OutputInterface $output): int
     {
         if ($result->count() === 0) {
-            return 0;
+            return static::CODE_SUCCESS;
         }
 
-        if ($this->checkResultForFalsePositiveCase($result)) {
-            if ($output->isVerbose()) {
-                $output->writeln(sprintf('<info>The issue about %s is a false positive result</info>', static::FALSE_POSITIVE_ISSUE_NUMBER));
-                $output->writeln('<info>Check https://github.com/FriendsOfPHP/security-advisories/issues/511 for details</info>');
-            }
-
-            return 0;
+        if (!$this->checkResultForFalsePositiveCase($result)) {
+            return static::CODE_ERROR;
         }
 
-        return 1;
+        if ($output->isVerbose()) {
+            $output->writeln(sprintf('<info>The issue about %s is a false positive result</info>', static::FALSE_POSITIVE_ISSUE_NUMBER));
+            $output->writeln('<info>Check https://github.com/FriendsOfPHP/security-advisories/issues/511 for details</info>');
+        }
+
+        return static::CODE_SUCCESS;
     }
 
     /**
