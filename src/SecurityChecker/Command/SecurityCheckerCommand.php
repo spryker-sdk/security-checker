@@ -56,16 +56,24 @@ class SecurityCheckerCommand extends Command
     }
 
     /**
+     * @throws \Symfony\Component\Process\Exception\ProcessFailedException
+     *
      * @return void
      */
     protected function loadFile(): void
     {
-        if (!file_exists(static::FILE_NAME)) {
-            $process = new Process(['wget', static::BINARY_CHECKER, '-O', static::FILE_NAME]);
-            $process->run();
-
-            $this->changeFileMode();
+        if (file_exists(static::FILE_NAME)) {
+            return;
         }
+
+        $process = new Process(['wget', static::BINARY_CHECKER, '-O', static::FILE_NAME]);
+        $process->run();
+
+        if ($process->getExitCode() === static::CODE_ERROR) {
+            throw new ProcessFailedException($process);
+        }
+
+        $this->changeFileMode();
     }
 
     /**
