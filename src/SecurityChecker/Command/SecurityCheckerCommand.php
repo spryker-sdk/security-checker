@@ -134,8 +134,10 @@ class SecurityCheckerCommand extends Command
         }
 
         if ($this->checkResultForFalsePositiveCase($result)) {
-            $output->writeln(sprintf('<info>The issue about %s is a false positive result</info>', static::FALSE_POSITIVE_ISSUE_NUMBER));
-            $output->writeln('<info>Check https://github.com/FriendsOfPHP/security-advisories/issues/511 for details</info>');
+            if ($output->isVerbose()) {
+                $output->writeln(sprintf('<info>The issue about %s is a false positive result</info>', static::FALSE_POSITIVE_ISSUE_NUMBER));
+                $output->writeln('<info>Check https://github.com/FriendsOfPHP/security-advisories/issues/511 for details</info>');
+            }
 
             return 0;
         }
