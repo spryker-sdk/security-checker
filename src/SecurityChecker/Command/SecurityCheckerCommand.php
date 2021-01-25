@@ -50,18 +50,7 @@ class SecurityCheckerCommand extends Command
 
         $output->writeln($result->getVulnerabilities());
 
-        if ($result->count() === 0) {
-            return 0;
-        }
-
-        if ($result->count() === 1 && strpos($result->getVulnerabilities(), static::FALSE_POSITIVE_ISSUE_NUMBER) !== false) {
-            $output->writeln(sprintf('<info>The issue about %s is a false positive result</info>', static::FALSE_POSITIVE_ISSUE_NUMBER));
-            $output->writeln('<info>Check https://github.com/FriendsOfPHP/security-advisories/issues/511 for details</info>');
-
-            return 0;
-        }
-
-        return 1;
+        return $this->convertResultToExitCode($result, $output);
     }
 
     /**
@@ -130,5 +119,37 @@ class SecurityCheckerCommand extends Command
         }
 
         return $commandOutput;
+    }
+
+    /**
+     * @param \SecurityChecker\Result $result
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
+     *
+     * @return int
+     */
+    protected function convertResultToExitCode(Result $result, OutputInterface $output): int
+    {
+        if ($result->count() === 0) {
+            return 0;
+        }
+
+        if ($this->checkResultForFalsePositiveCase($result)) {
+            $output->writeln(sprintf('<info>The issue about %s is a false positive result</info>', static::FALSE_POSITIVE_ISSUE_NUMBER));
+            $output->writeln('<info>Check https://github.com/FriendsOfPHP/security-advisories/issues/511 for details</info>');
+
+            return 0;
+        }
+
+        return 1;
+    }
+
+    /**
+     * @param \SecurityChecker\Result $result
+     *
+     * @return bool
+     */
+    protected function checkResultForFalsePositiveCase(Result $result): bool
+    {
+        return $result->count() === 1 && strpos($result->getVulnerabilities(), static::FALSE_POSITIVE_ISSUE_NUMBER) !== false;
     }
 }
