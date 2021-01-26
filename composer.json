@@ -4,7 +4,10 @@
     "description": "A security checker for your composer.lock",
     "license": "proprietary",
     "require": {
-        "php": ">=7.3"
+        "php": ">=7.3",
+        "symfony/console": "^4.0.0 || ^5.0.0",
+        "symfony/options-resolver": "^4.0.0 || ^5.0.0",
+        "symfony/process": "^4.0.0 || ^5.0.0"
     },
     "require-dev": {
         "phpstan/phpstan": "^0.12.18",
@@ -27,9 +30,9 @@
     "config": {
         "sort-packages": true
     },
-  "scripts": {
-    "cs-check": "phpcs --colors -p -s --extensions=php --standard=vendor/spryker/code-sniffer/Spryker/ruleset.xml --ignore=/tests/_data/,/_support/ src/ tests/",
-    "cs-fix": "phpcbf --colors -p --extensions=php --standard=vendor/spryker/code-sniffer/Spryker/ruleset.xml --ignore=/tests/_data/,/_support/ src/ tests/",
-    "stan": "phpstan analyze -l 8 src/"
-  }
+    "scripts": {
+        "cs-check": "phpcs --standard=vendor/spryker/code-sniffer/Spryker/ruleset.xml -v src/",
+        "cs-fix": "phpcbf --standard=vendor/spryker/code-sniffer/Spryker/ruleset.xml -v src/",
+        "stan": "phpstan analyze -l 8 src/"
+    }
 }
