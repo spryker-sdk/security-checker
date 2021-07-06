@@ -13,7 +13,15 @@ It wraps [FriendsOfPHP/security-advisories](https://github.com/FriendsOfPHP/secu
 
 ## Configuration
 
-After the installation you will need to enable it in the `ConsoleDependencyProvider`. 
+After the installation you will need to enable it in your `ConsoleDependencyProvider`:
+```php
+use SecurityChecker\Command\SecurityCheckerCommand;
+
+protected function getConsoleCommands(Container $container): array
+{
+    ...
+    $commands[] = new SecurityCheckerCommand();
+```
 
 ## Commands
 
