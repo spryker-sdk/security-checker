@@ -11,6 +11,7 @@ namespace SecurityChecker\Command;
 use SecurityChecker\Result;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
@@ -26,6 +27,9 @@ class SecurityCheckerCommand extends Command
     protected const FILE_NAME = '/tmp/security-checker';
     protected const FALSE_POSITIVE_ISSUE_NUMBER = 'CVE-NONE-0001';
 
+    protected const OPTION_FORMAT = 'format';
+    protected const OPTION_PATH = 'path';
+
     /**
      * @return void
      */
@@ -33,7 +37,21 @@ class SecurityCheckerCommand extends Command
     {
         $this
             ->setName(static::COMMAND_NAME)
-            ->setDescription('Checks security issues in your project dependencies');
+            ->setDescription('Checks security issues in your project dependencies')
+            ->addOption(
+                static::OPTION_FORMAT,
+                'f',
+                InputOption::VALUE_OPTIONAL,
+                'Set format for checker',
+                false,
+            )
+            ->addOption(
+                static::OPTION_PATH,
+                'p',
+                InputOption::VALUE_OPTIONAL,
+                'Set path for checker',
+                false,
+            );
     }
 
     /**
@@ -45,7 +63,8 @@ class SecurityCheckerCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $this->loadFile();
-        $commandOutput = $this->runCommand();
+        $parameters = $this->getParameters($input);
+        $commandOutput = $this->runCommand($parameters);
         $commandOutput = $this->markFalsePositiveResults($commandOutput);
 
         $result = $this->createResultFromCommandOutput($commandOutput);
@@ -53,6 +72,26 @@ class SecurityCheckerCommand extends Command
         $output->writeln($result->getVulnerabilities());
 
         return $this->convertResultToExitCode($result, $output);
+    }
+
+    /**
+     * @param \Symfony\Component\Console\Input\InputInterface $input
+     *
+     * @return string[]
+     */
+    protected function getParameters(InputInterface $input): array
+    {
+        $parameters = [];
+
+        if ($input->hasOption(static::OPTION_PATH)) {
+            $parameters[] = sprintf('--%s=%s', static::OPTION_PATH, $input->getOption(static::OPTION_PATH));
+        }
+
+        if ($input->hasOption(static::OPTION_FORMAT)) {
+            $parameters[] = sprintf('--%s=%s', static::OPTION_FORMAT, $input->getOption(static::OPTION_FORMAT));
+        }
+
+        return $parameters;
     }
 
     /**
@@ -85,13 +124,17 @@ class SecurityCheckerCommand extends Command
     }
 
     /**
+     * @param string[] $parameters
+     *
      * @throws \Symfony\Component\Process\Exception\ProcessFailedException
      *
      * @return string
      */
-    protected function runCommand(): string
+    protected function runCommand(array $parameters): string
     {
-        $process = new Process([static::FILE_NAME, 'check:security']);
+        $parameters = array_merge([static::FILE_NAME], $parameters);
+
+        $process = new Process($parameters);
         $process->run();
 
         if (!empty($process->getErrorOutput())) {
