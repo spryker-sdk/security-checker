@@ -29,7 +29,7 @@ class SecurityCheckerCommand extends Command
 
     protected const OPTION_FORMAT = 'format';
     protected const PATH = 'path';
-    protected const AVAILABLE_FORMATS = ['ansi', 'markdown', 'json', 'junit', 'yaml',];
+    protected const AVAILABLE_FORMATS = ['ansi', 'markdown', 'json', 'junit', 'yaml'];
 
     /**
      * @return void
