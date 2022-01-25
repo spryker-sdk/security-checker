@@ -1,3 +1,2 @@
 parameters:
-    bootstrap: %rootDir%/../../../phpstan-bootstrap.php
     checkMissingIterableValueType: false
