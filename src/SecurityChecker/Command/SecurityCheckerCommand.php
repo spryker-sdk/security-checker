@@ -28,7 +28,7 @@ class SecurityCheckerCommand extends Command
     protected const FALSE_POSITIVE_ISSUE_NUMBER = 'CVE-NONE-0001';
 
     protected const OPTION_FORMAT = 'format';
-    protected const PATH = 'path';
+    protected const OPTION_PATH = 'path';
     protected const AVAILABLE_FORMATS = ['ansi', 'markdown', 'json', 'junit', 'yaml'];
 
     /**
@@ -47,10 +47,10 @@ class SecurityCheckerCommand extends Command
                 false,
             )
             ->addOption(
-                static::PATH,
+                static::OPTION_PATH,
                 'p',
                 InputOption::VALUE_OPTIONAL,
-                'Set format for checker',
+                'Set path for checker',
                 false,
             );
     }
@@ -84,8 +84,8 @@ class SecurityCheckerCommand extends Command
     {
         $parameters = [];
 
-        if ($input->hasOption(static::PATH) && $input->getOption(static::PATH)) {
-            $parameters[] = sprintf('--%s=%s', static::PATH, $input->getOption(static::PATH));
+        if ($input->hasOption(static::OPTION_PATH) && $input->getOption(static::OPTION_PATH)) {
+            $parameters[] = sprintf('--%s=%s', static::OPTION_PATH, $input->getOption(static::OPTION_PATH));
         }
 
         if ($input->hasOption(static::OPTION_FORMAT) && $input->getOption(static::OPTION_FORMAT)) {
