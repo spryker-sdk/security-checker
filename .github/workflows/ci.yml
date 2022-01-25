@@ -43,8 +43,8 @@ jobs:
             - name: Composer install
               run: composer install --optimize-autoloader
 
-            - name: CodeStyle checks
-              run: composer cs-check
-
             - name: PHPStan checks
               run: composer stan
+
+            - name: CodeStyle checks
+              run: composer cs-check
