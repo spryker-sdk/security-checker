@@ -10,9 +10,9 @@
         "symfony/process": "^4.0.0 || ^5.0.0"
     },
     "require-dev": {
-        "phpstan/phpstan": "^0.12.18",
+        "phpstan/phpstan": "^0.2.0",
         "slevomat/coding-standard": "^6.2",
-        "spryker/code-sniffer": "^0.15.6",
+        "spryker/code-sniffer": "^0.17.0",
         "squizlabs/php_codesniffer": "^3.5"
     },
     "autoload": {
