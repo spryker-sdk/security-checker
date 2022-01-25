@@ -83,11 +83,11 @@ class SecurityCheckerCommand extends Command
     {
         $parameters = [];
 
-        if ($input->hasOption(static::OPTION_PATH) && $input->getOption(static::OPTION_PATH)) {
+        if ($input->hasOption(static::OPTION_PATH)) {
             $parameters[] = sprintf('--%s=%s', static::OPTION_PATH, $input->getOption(static::OPTION_PATH));
         }
 
-        if ($input->hasOption(static::OPTION_FORMAT) && $input->getOption(static::OPTION_FORMAT)) {
+        if ($input->hasOption(static::OPTION_FORMAT)) {
             $parameters[] = sprintf('--%s=%s', static::OPTION_FORMAT, $input->getOption(static::OPTION_FORMAT));
         }
 
@@ -132,9 +132,9 @@ class SecurityCheckerCommand extends Command
      */
     protected function runCommand(array $parameters): string
     {
-        $commands = array_merge([static::FILE_NAME], $parameters);
+        $parameters = array_merge([static::FILE_NAME], $parameters);
 
-        $process = new Process($commands);
+        $process = new Process($parameters);
         $process->run();
 
         if (!empty($process->getErrorOutput())) {
