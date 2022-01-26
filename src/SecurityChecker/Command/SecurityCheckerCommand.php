@@ -43,14 +43,12 @@ class SecurityCheckerCommand extends Command
                 'f',
                 InputOption::VALUE_OPTIONAL,
                 'Set format for checker',
-                false,
             )
             ->addOption(
                 static::OPTION_PATH,
                 'p',
                 InputOption::VALUE_OPTIONAL,
                 'Set path for checker',
-                false,
             );
     }
 
@@ -83,11 +81,11 @@ class SecurityCheckerCommand extends Command
     {
         $parameters = [];
 
-        if ($input->hasOption(static::OPTION_PATH)) {
+        if ($input->getOption(static::OPTION_PATH)) {
             $parameters[] = sprintf('--%s=%s', static::OPTION_PATH, $input->getOption(static::OPTION_PATH));
         }
 
-        if ($input->hasOption(static::OPTION_FORMAT)) {
+        if ($input->getOption(static::OPTION_FORMAT)) {
             $parameters[] = sprintf('--%s=%s', static::OPTION_FORMAT, $input->getOption(static::OPTION_FORMAT));
         }
 
