@@ -43,14 +43,12 @@ class SecurityCheckerCommand extends Command
                 'f',
                 InputOption::VALUE_OPTIONAL,
                 'Set format for checker',
-                false,
             )
             ->addOption(
                 static::OPTION_PATH,
                 'p',
                 InputOption::VALUE_OPTIONAL,
                 'Set path for checker',
-                false,
             );
     }
 
