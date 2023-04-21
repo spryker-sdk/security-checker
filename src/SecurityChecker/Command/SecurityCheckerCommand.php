@@ -23,7 +23,7 @@ class SecurityCheckerCommand extends Command
 
     protected const COMMAND_NAME = 'security:check';
 
-    protected const BINARY_CHECKER = 'https://github.com/fabpot/local-php-security-checker/releases/download/v1.0.0/local-php-security-checker_1.0.0_linux_amd64';
+    protected const BINARY_CHECKER = '$(curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "local-php-security-checker_[0-9.]+_linux_amd64$")';
     protected const FILE_NAME = '/tmp/security-checker';
     protected const FALSE_POSITIVE_ISSUE_NUMBER = 'CVE-NONE-0001';
 
@@ -103,11 +103,10 @@ class SecurityCheckerCommand extends Command
             return;
         }
 
-        $process = new Process(['wget', static::BINARY_CHECKER, '-O', static::FILE_NAME]);
-        $process->run();
+        exec(sprintf('wget %s -O %s 2>&1', static::BINARY_CHECKER, static::FILE_NAME), $output, $resultCode);
 
-        if ($process->getExitCode() === static::CODE_ERROR) {
-            throw new ProcessFailedException($process);
+        if ($resultCode === static::CODE_ERROR) {
+            throw new ProcessFailedException($output);
         }
 
         $this->changeFileMode();
