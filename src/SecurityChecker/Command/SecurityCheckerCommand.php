@@ -14,6 +14,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\Exception\ProcessFailedException;
+use Symfony\Component\Process\Exception\RuntimeException;
 use Symfony\Component\Process\Process;
 
 class SecurityCheckerCommand extends Command
@@ -106,7 +107,7 @@ class SecurityCheckerCommand extends Command
         exec(sprintf('wget %s -O %s 2>&1', static::BINARY_CHECKER, static::FILE_NAME), $output, $resultCode);
 
         if ($resultCode === static::CODE_ERROR) {
-            throw new ProcessFailedException($output);
+            throw new RuntimeException(implode(PHP_EOL, $output));
         }
 
         $this->changeFileMode();
