@@ -94,7 +94,7 @@ class SecurityCheckerCommand extends Command
     }
 
     /**
-     * @throws \Symfony\Component\Process\Exception\ProcessFailedException
+     * @throws \Symfony\Component\Process\Exception\RuntimeException
      *
      * @return void
      */
