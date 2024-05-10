@@ -1,10 +1,11 @@
 <?php
-declare(strict_types = 1);
 
 /**
  * Copyright © 2019-present Spryker Systems GmbH. All rights reserved.
  * Use of this software requires acceptance of the Evaluation License Agreement. See LICENSE file.
  */
+
+declare(strict_types = 1);
 
 namespace SecurityChecker\Command;
 
@@ -19,17 +20,100 @@ use Symfony\Component\Process\Process;
 
 class SecurityCheckerCommand extends Command
 {
+    /**
+     * @var int
+     */
     protected const CODE_SUCCESS = 0;
+
+    /**
+     * @var int
+     */
     protected const CODE_ERROR = 1;
 
+    /**
+     * @var string
+     */
     protected const COMMAND_NAME = 'security:check';
 
-    protected const BINARY_CHECKER = '$(curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "local-php-security-checker_[0-9.]+_linux_amd64$")';
+    /**
+     * @var string
+     */
+    protected const WGET_COMMAND_PATTERN = 'wget %s -O %s 2>&1';
+
+    /**
+     * @var string
+     */
+    protected const BINARY_CHECKER = 'curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "%s"';
+
+    /**
+     * @var string
+     */
     protected const FILE_NAME = '/tmp/security-checker';
+
+    /**
+     * @var string
+     */
     protected const FALSE_POSITIVE_ISSUE_NUMBER = 'CVE-NONE-0001';
 
+    /**
+     * @var string
+     */
     protected const OPTION_FORMAT = 'format';
+
+    /**
+     * @var string
+     */
     protected const OPTION_PATH = 'path';
+
+    /**
+     * @var string
+     */
+    protected const EXCEPTION_MESSAGE_FAILED_TO_FIND_BINARY_URL = 'Failed to find the appropriate security checker binary URL.';
+
+    /**
+     * @var string
+     */
+    protected const MAC_PATTERN = '_darwin_amd64$';
+
+    /**
+     * @var string
+     */
+    protected const WINDOWS_PATTERN = '_windows_amd64.exe$';
+
+    /**
+     * @var string
+     */
+    protected const LINUX_ARM_PATTERN = '_linux_arm64$';
+
+    /**
+     * @var string
+     */
+    protected const LINUX_AMD_PATTERN = '_linux_amd64$';
+
+    /**
+     * @var string
+     */
+    protected const UNKNOWN_OSTYPE = 'unknown';
+
+    /**
+     * @var string
+     */
+    protected const OSTYPE_MAC = 'darwin';
+
+    /**
+     * @var string
+     */
+    protected const OSTYPE_WIN = 'win';
+
+    /**
+     * @var string
+     */
+    protected const HOSTTYPE_ARM64 = 'arm64';
+
+    /**
+     * @var string
+     */
+    protected const HOSTTYPE_AARCH64 = 'aarch64';
 
     /**
      * @return void
@@ -76,7 +160,7 @@ class SecurityCheckerCommand extends Command
     /**
      * @param \Symfony\Component\Console\Input\InputInterface $input
      *
-     * @return string[]
+     * @return array<string>
      */
     protected function getParameters(InputInterface $input): array
     {
@@ -104,9 +188,15 @@ class SecurityCheckerCommand extends Command
             return;
         }
 
-        exec(sprintf('wget %s -O %s 2>&1', static::BINARY_CHECKER, static::FILE_NAME), $output, $resultCode);
+        exec(sprintf(static::BINARY_CHECKER, $this->getBinaryCheckerPattern()), $urls, $resultCode);
 
-        if ($resultCode === static::CODE_ERROR) {
+        if ($resultCode !== 0 || $urls === []) {
+            throw new RuntimeException(static::EXCEPTION_MESSAGE_FAILED_TO_FIND_BINARY_URL);
+        }
+
+        exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::FILE_NAME), $output, $resultCode);
+
+        if ($resultCode !== static::CODE_SUCCESS) {
             throw new RuntimeException(implode(PHP_EOL, $output));
         }
 
@@ -122,7 +212,7 @@ class SecurityCheckerCommand extends Command
     }
 
     /**
-     * @param string[] $parameters
+     * @param array<string> $parameters
      *
      * @throws \Symfony\Component\Process\Exception\ProcessFailedException
      *
@@ -151,7 +241,7 @@ class SecurityCheckerCommand extends Command
     {
         $count = 0;
         preg_match('/\d\spackage/m', $commandOutput, $matches);
-        if (!empty($matches)) {
+        if ($matches) {
             $count = (int)$matches[0];
         }
 
@@ -169,7 +259,7 @@ class SecurityCheckerCommand extends Command
             $commandOutput = str_replace(
                 static::FALSE_POSITIVE_ISSUE_NUMBER,
                 sprintf('<info>%s - is a false positive</info>', static::FALSE_POSITIVE_ISSUE_NUMBER),
-                $commandOutput
+                $commandOutput,
             );
         }
 
@@ -208,5 +298,58 @@ class SecurityCheckerCommand extends Command
     protected function checkResultForFalsePositiveCase(Result $result): bool
     {
         return $result->count() === 1 && strpos($result->getVulnerabilities(), static::FALSE_POSITIVE_ISSUE_NUMBER) !== false;
+    }
+
+    /**
+     * @return string
+     */
+    protected function getBinaryCheckerPattern(): string
+    {
+        $osType = getenv('OSTYPE') ?: static::UNKNOWN_OSTYPE;
+        $hostType = getenv('HOSTTYPE') ?: static::UNKNOWN_OSTYPE;
+
+        if ($this->isMac($osType)) {
+            return static::MAC_PATTERN;
+        }
+
+        if ($this->isWindows($osType)) {
+            return static::WINDOWS_PATTERN;
+        }
+
+        if ($this->isArmArchitecture($hostType)) {
+            return static::LINUX_ARM_PATTERN;
+        }
+
+        return static::LINUX_AMD_PATTERN;
+    }
+
+    /**
+     * @param string $osType
+     *
+     * @return bool
+     */
+    protected function isMac(string $osType): bool
+    {
+        return strpos($osType, static::OSTYPE_MAC) !== false;
+    }
+
+    /**
+     * @param string $osType
+     *
+     * @return bool
+     */
+    protected function isWindows(string $osType): bool
+    {
+        return strpos($osType, static::OSTYPE_WIN) !== false;
+    }
+
+    /**
+     * @param string $hostType
+     *
+     * @return bool
+     */
+    protected function isArmArchitecture(string $hostType): bool
+    {
+        return in_array($hostType, [static::HOSTTYPE_ARM64, static::HOSTTYPE_AARCH64], true);
     }
 }
