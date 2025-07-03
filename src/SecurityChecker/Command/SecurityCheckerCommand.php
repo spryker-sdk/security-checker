@@ -43,7 +43,7 @@ class SecurityCheckerCommand extends Command
     /**
      * @var string
      */
-    protected const BINARY_CHECKER = 'curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "%s"';
+    protected const BINARY_CHECKER = 'curl -s --retry 3 --retry-delay 15 --retry-max-time 20 https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "%s"';
 
     /**
      * @var string
