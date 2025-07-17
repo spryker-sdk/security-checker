@@ -184,13 +184,13 @@ class SecurityCheckerCommand extends Command
     }
 
     /**
-     * @param \Symfony\Component\Console\Output\OutputInterface|null $output
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
      *
      * @throws \Symfony\Component\Process\Exception\RuntimeException
      *
      * @return void
      */
-    protected function loadFile(?OutputInterface $output = null): void
+    protected function loadFile(OutputInterface $output): void
     {
         if ($output->isVerbose()) {
             $output->writeln('<info>Loading security checker binary...</info>');
