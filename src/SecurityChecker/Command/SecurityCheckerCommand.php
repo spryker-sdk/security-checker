@@ -202,10 +202,6 @@ class SecurityCheckerCommand extends Command
      */
     protected function loadFile(OutputInterface $output): void
     {
-        if ($output->isVerbose()) {
-            $output->writeln('<info>Loading security checker binary...</info>');
-        }
-        echo 'Loading security checker binary...' . PHP_EOL;
         // Skip if file exists and is still valid (less than 24h old)
         if ($this->isValidCachedFile()) {
             return;
