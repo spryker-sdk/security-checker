@@ -55,7 +55,7 @@ class SecurityCheckerCommand extends Command
      * @var string
      */
     protected const FALLBACK_VERSION = 'v2.1.3';
-    
+
     /**
      * @var string
      */
