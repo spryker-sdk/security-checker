@@ -55,6 +55,11 @@ class SecurityCheckerCommand extends Command
      * @var string
      */
     protected const FALLBACK_VERSION = 'v2.1.3';
+    
+    /**
+     * @var string
+     */
+    protected const LATEST_VERSION_COMMAND = 'curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep "tag_name" | cut -d "\"" -f 4';
 
     /**
      * @var string
@@ -347,7 +352,7 @@ class SecurityCheckerCommand extends Command
     protected function getLatestReleaseVersion(): string
     {
         try {
-            exec('curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep "tag_name" | cut -d "\"" -f 4', $output, $resultCode);
+            exec(static::LATEST_VERSION_COMMAND, $output, $resultCode);
 
             if ($resultCode === static::CODE_SUCCESS && !empty($output[0])) {
                 return $output[0];
@@ -361,9 +366,9 @@ class SecurityCheckerCommand extends Command
     /**
      * Safely removes a file if it exists
      *
-     * @param string $filePath Path to the file to remove
+     * @param string $filePath
      *
-     * @return bool True if file was removed or didn't exist, false on failure
+     * @return bool
      */
     protected function removeExistingFile(string $filePath): bool
     {
