@@ -49,6 +49,16 @@ class SecurityCheckerCommand extends Command
     /**
      * @var string
      */
+    protected const FALLBACK_RELEASE_URL = 'https://github.com/fabpot/local-php-security-checker/releases/download/%s/local-php-security-checker%s';
+
+    /**
+     * @var string
+     */
+    protected const FALLBACK_VERSION = 'v2.1.3';
+
+    /**
+     * @var string
+     */
     protected const FILE_NAME = '/tmp/security-checker';
 
     /**
@@ -220,7 +230,7 @@ class SecurityCheckerCommand extends Command
             }
         }
 
-        $maxAttempts = 5;
+        $maxAttempts = 3;
         $downloadErrors = [];
         $downloadSuccess = false;
 
@@ -322,12 +332,34 @@ class SecurityCheckerCommand extends Command
      */
     protected function createFallbackUrl(string $binaryExtension): array
     {
+        $latestVersion = $this->getLatestReleaseVersion();
+
         return [
             sprintf(
-                'https://github.com/fabpot/local-php-security-checker/releases/download/v1.2.0/local-php-security-checker%s',
+                static::FALLBACK_RELEASE_URL,
+                $latestVersion,
                 $binaryExtension,
             ),
         ];
+    }
+
+    /**
+     * Try to get the latest release version from GitHub API
+     *
+     * @return string
+     */
+    protected function getLatestReleaseVersion(): string
+    {
+        try {
+            exec('curl -s https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep "tag_name" | cut -d "\"" -f 4', $output, $resultCode);
+
+            if ($resultCode === static::CODE_SUCCESS && !empty($output[0])) {
+                return $output[0];
+            }
+        } catch (Exception $e) {
+        }
+
+        return static::FALLBACK_VERSION;
     }
 
     /**
