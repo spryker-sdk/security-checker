@@ -9,6 +9,7 @@ declare(strict_types = 1);
 
 namespace SecurityChecker\Command;
 
+use Exception;
 use SecurityChecker\Result;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -43,12 +44,17 @@ class SecurityCheckerCommand extends Command
     /**
      * @var string
      */
-    protected const BINARY_CHECKER = 'curl -s --retry 3 --retry-delay 15 --retry-max-time 20 https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "%s"';
+    protected const BINARY_CHECKER = 'curl -s --retry 5 --retry-delay 10 --retry-max-time 60 --connect-timeout 30 https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d" -f4 | egrep "%s"';
 
     /**
      * @var string
      */
     protected const FILE_NAME = '/tmp/security-checker';
+
+    /**
+     * @var int
+     */
+    protected const FILE_CACHE_LIFETIME_SECONDS = 86400; // 1 day cache lifetime
 
     /**
      * @var string
@@ -145,7 +151,7 @@ class SecurityCheckerCommand extends Command
      */
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        $this->loadFile();
+        $this->loadFile($output);
         $parameters = $this->getParameters($input);
         $commandOutput = $this->runCommand($parameters);
         $commandOutput = $this->markFalsePositiveResults($commandOutput);
@@ -178,29 +184,166 @@ class SecurityCheckerCommand extends Command
     }
 
     /**
+     * @param \Symfony\Component\Console\Output\OutputInterface|null $output
+     *
      * @throws \Symfony\Component\Process\Exception\RuntimeException
      *
      * @return void
      */
-    protected function loadFile(): void
+    protected function loadFile(?OutputInterface $output = null): void
     {
-        if (file_exists(static::FILE_NAME)) {
+        if ($output->isVerbose()) {
+            $output->writeln('<info>Loading security checker binary...</info>');
+        }
+        echo 'Loading security checker binary...' . PHP_EOL;
+        // Skip if file exists and is still valid (less than 24h old)
+        if ($this->isValidCachedFile()) {
             return;
         }
 
-        exec(sprintf(static::BINARY_CHECKER, $this->getBinaryCheckerPattern()), $urls, $resultCode);
-
-        if ($resultCode !== 0 || $urls === []) {
-            throw new RuntimeException(static::EXCEPTION_MESSAGE_FAILED_TO_FIND_BINARY_URL);
+        // Try to clean up old file if it exists but is outdated
+        if (file_exists(static::FILE_NAME)) {
+            $this->removeExistingFile(static::FILE_NAME);
         }
 
-        exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::FILE_NAME), $output, $resultCode);
+        // Try primary method - latest release from GitHub API
+        $urls = $this->getSecurityCheckerUrl();
 
-        if ($resultCode !== static::CODE_SUCCESS) {
-            throw new RuntimeException(implode(PHP_EOL, $output));
+        // If primary method fails, try fallback URL
+        if (!$urls) {
+            $urls = $this->getFallbackSecurityCheckerUrl();
+            if (!$urls) {
+                throw new RuntimeException(
+                    static::EXCEPTION_MESSAGE_FAILED_TO_FIND_BINARY_URL .
+                    ' Both primary and fallback methods failed.',
+                );
+            }
+        }
+
+        $maxAttempts = 5;
+        $downloadErrors = [];
+        $downloadSuccess = false;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::FILE_NAME), $output, $resultCode);
+
+            if ($resultCode === static::CODE_SUCCESS) {
+                $downloadSuccess = true;
+
+                break;
+            }
+
+            $downloadErrors = array_merge($downloadErrors, ["Attempt $attempt failed: " . implode(PHP_EOL, $output)]);
+            sleep(5);
+        }
+
+        if (!$downloadSuccess) {
+            throw new RuntimeException(
+                "Failed to download security checker after $maxAttempts attempts. " .
+                'Errors: ' . implode('; ', $downloadErrors),
+            );
         }
 
         $this->changeFileMode();
+    }
+
+    /**
+     * Checks if the cached file exists and is still valid (not older than cache lifetime)
+     *
+     * @return bool
+     */
+    protected function isValidCachedFile(): bool
+    {
+        if (!file_exists(static::FILE_NAME) || !is_executable(static::FILE_NAME)) {
+            return false;
+        }
+
+        $fileModTime = filemtime(static::FILE_NAME);
+        if ($fileModTime === false || (time() - $fileModTime) > static::FILE_CACHE_LIFETIME_SECONDS) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get security checker URL using primary method (GitHub API latest release)
+     *
+     * @return array<string>
+     */
+    protected function getSecurityCheckerUrl(): array
+    {
+        $urls = [];
+        $resultCode = 1;
+
+        $binaryCommand = sprintf(static::BINARY_CHECKER, $this->getBinaryCheckerPattern());
+
+        try {
+            exec($binaryCommand, $urls, $resultCode);
+        } catch (Exception $e) {
+            return [];
+        }
+
+        if ($resultCode !== 0 || !$urls) {
+            return [];
+        }
+
+        return $urls;
+    }
+
+    /**
+     * Get fallback security checker URL (direct download from GitHub release)
+     *
+     * @return array<string>
+     */
+    protected function getFallbackSecurityCheckerUrl(): array
+    {
+        $pattern = $this->getBinaryCheckerPattern();
+
+        if ($pattern === static::MAC_PATTERN) {
+            return $this->createFallbackUrl('_darwin_amd64');
+        }
+
+        if ($pattern === static::WINDOWS_PATTERN) {
+            return $this->createFallbackUrl('_windows_amd64.exe');
+        }
+
+        if ($pattern === static::LINUX_ARM_PATTERN) {
+            return $this->createFallbackUrl('_linux_arm64');
+        }
+
+        return $this->createFallbackUrl('_linux_amd64');
+    }
+
+    /**
+     * @param string $binaryExtension
+     *
+     * @return array<string>
+     */
+    protected function createFallbackUrl(string $binaryExtension): array
+    {
+        return [
+            sprintf(
+                'https://github.com/fabpot/local-php-security-checker/releases/download/v1.2.0/local-php-security-checker%s',
+                $binaryExtension,
+            ),
+        ];
+    }
+
+    /**
+     * Safely removes a file if it exists
+     *
+     * @param string $filePath Path to the file to remove
+     *
+     * @return bool True if file was removed or didn't exist, false on failure
+     */
+    protected function removeExistingFile(string $filePath): bool
+    {
+        try {
+            return unlink($filePath);
+        } catch (Exception $e) {
+            return false;
+        }
     }
 
     /**
