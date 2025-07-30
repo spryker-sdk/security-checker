@@ -10,13 +10,21 @@ declare(strict_types = 1);
 namespace SecurityChecker\Command;
 
 use Exception;
+use Generated\Shared\Transfer\FileSystemContentTransfer;
+use Generated\Shared\Transfer\FileSystemDeleteTransfer;
+use Generated\Shared\Transfer\FileSystemQueryTransfer;
+use Generated\Shared\Transfer\FileSystemStreamTransfer;
+use RuntimeException;
+use SecurityChecker\Dependency\Service\SecurityCheckerToFileSystemServiceBridge;
+use SecurityChecker\Dependency\Service\SecurityCheckerToFileSystemServiceInterface;
 use SecurityChecker\Result;
+use SecurityChecker\Shared\SecurityCheckerConstants;
+use Spryker\Zed\Kernel\Locator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\Exception\ProcessFailedException;
-use Symfony\Component\Process\Exception\RuntimeException;
 use Symfony\Component\Process\Process;
 
 class SecurityCheckerCommand extends Command
@@ -35,6 +43,11 @@ class SecurityCheckerCommand extends Command
      * @var string
      */
     protected const COMMAND_NAME = 'security:check';
+
+    /**
+     * @var \SecurityChecker\Dependency\Service\SecurityCheckerToFileSystemServiceInterface|null
+     */
+    protected ?SecurityCheckerToFileSystemServiceInterface $fileSystemService = null;
 
     /**
      * @var string
@@ -64,7 +77,12 @@ class SecurityCheckerCommand extends Command
     /**
      * @var string
      */
-    protected const FILE_NAME = '/tmp/security-checker';
+    protected const FILE_NAME = 'security-checker-binary';
+
+    /**
+     * @var string
+     */
+    protected const LOCAL_TMP_FILE = 'ci-security-checker/security-checker-tmp';
 
     /**
      * @var int
@@ -137,6 +155,19 @@ class SecurityCheckerCommand extends Command
     protected const HOSTTYPE_AARCH64 = 'aarch64';
 
     /**
+     * @return \SecurityChecker\Dependency\Service\SecurityCheckerToFileSystemServiceInterface
+     */
+    protected function getFileSystemService()
+    {
+        if ($this->fileSystemService === null) {
+            $fileSystemService = Locator::getInstance()->fileSystem()->service();
+            $this->fileSystemService = new SecurityCheckerToFileSystemServiceBridge($fileSystemService);
+        }
+
+        return $this->fileSystemService;
+    }
+
+    /**
      * @return void
      */
     protected function configure(): void
@@ -207,20 +238,8 @@ class SecurityCheckerCommand extends Command
      */
     protected function loadFile(OutputInterface $output): void
     {
-        // Skip if file exists and is still valid (less than 24h old)
-        if ($this->isValidCachedFile()) {
-            return;
-        }
-
-        // Try to clean up old file if it exists but is outdated
-        if (file_exists(static::FILE_NAME)) {
-            $this->removeExistingFile(static::FILE_NAME);
-        }
-
-        // Try primary method - latest release from GitHub API
         $urls = $this->getSecurityCheckerUrl();
 
-        // If primary method fails, try fallback URL
         if (!$urls) {
             $urls = $this->getFallbackSecurityCheckerUrl();
             if (!$urls) {
@@ -231,30 +250,49 @@ class SecurityCheckerCommand extends Command
             }
         }
 
-        $maxAttempts = 3;
-        $downloadErrors = [];
-        $downloadSuccess = false;
+        try {
+            $maxAttempts = 3;
+            $downloadErrors = [];
+            $downloadSuccess = false;
 
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::FILE_NAME), $output, $resultCode);
+            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+                exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::LOCAL_TMP_FILE), $outputLines, $resultCode);
 
-            if ($resultCode === static::CODE_SUCCESS) {
-                $downloadSuccess = true;
+                if ($resultCode === static::CODE_SUCCESS) {
+                    $downloadSuccess = true;
 
-                break;
+                    break;
+                }
+
+                $downloadErrors = array_merge($downloadErrors, ["Attempt $attempt failed: " . implode(PHP_EOL, $outputLines)]);
+                sleep(5);
             }
 
-            $downloadErrors = array_merge($downloadErrors, ["Attempt $attempt failed: " . implode(PHP_EOL, $output)]);
-            sleep(5);
+            if (!$downloadSuccess) {
+                throw new RuntimeException(
+                    "Failed to download security checker after $maxAttempts attempts. " .
+                    'Errors: ' . implode('; ', $downloadErrors),
+                );
+            }
+            // URL download successful, upload to storage for future use
+            // Неважно, удалось загрузить в хранилище или нет, мы уже успешно скачали файл
+            $this->uploadFileToStorage();
+        } catch (Exception $e) {
+            // URL download failed, try to use the cached file from storage if available
+            if (!$this->isValidCachedFile()) {
+                // Rethrow exception if no valid cached file exists
+                throw $e;
+            }
+
+            $output->writeln('<info>Using cached security checker from storage</info>');
+            if (!$this->downloadFileFromStorage()) {
+                throw new RuntimeException(
+                    "Failed to download security checker from storage. " . $e->getMessage()
+                );
+            }
         }
 
-        if (!$downloadSuccess) {
-            throw new RuntimeException(
-                "Failed to download security checker after $maxAttempts attempts. " .
-                'Errors: ' . implode('; ', $downloadErrors),
-            );
-        }
-
+        // Set execution permissions on the local file
         $this->changeFileMode();
     }
 
@@ -265,16 +303,24 @@ class SecurityCheckerCommand extends Command
      */
     protected function isValidCachedFile(): bool
     {
-        if (!file_exists(static::FILE_NAME) || !is_executable(static::FILE_NAME)) {
+        try {
+            $fileSystemQueryTransfer = $this->createFileSystemQueryTransfer(static::FILE_NAME);
+
+            if (!$this->getFileSystemService()->has($fileSystemQueryTransfer)) {
+                return false;
+            }
+
+            $timestamp = $this->getFileSystemService()->getTimestamp($fileSystemQueryTransfer);
+
+            if ($timestamp === null || (time() - $timestamp) > static::FILE_CACHE_LIFETIME_SECONDS) {
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            // Если файловая система не настроена или возникла другая ошибка, считаем что кеша нет
             return false;
         }
-
-        $fileModTime = filemtime(static::FILE_NAME);
-        if ($fileModTime === false || (time() - $fileModTime) > static::FILE_CACHE_LIFETIME_SECONDS) {
-            return false;
-        }
-
-        return true;
     }
 
     /**
@@ -384,7 +430,59 @@ class SecurityCheckerCommand extends Command
      */
     protected function changeFileMode(): void
     {
-        chmod(static::FILE_NAME, 0777);
+        if (!file_exists(static::LOCAL_TMP_FILE)) {
+            return;
+        }
+
+        chmod(static::LOCAL_TMP_FILE, 0777);
+    }
+
+    /**
+     * Downloads the security checker binary from storage to a local file
+     *
+     * @return bool
+     */
+    protected function downloadFileFromStorage(): bool
+    {
+        try {
+            $fileSystemQueryTransfer = $this->createFileSystemQueryTransfer(static::FILE_NAME);
+            $fileContent = $this->getFileSystemService()->read($fileSystemQueryTransfer);
+
+            if (!$fileContent) {
+                return false;
+            }
+
+            file_put_contents(static::LOCAL_TMP_FILE, $fileContent);
+            return true;
+        } catch (\Exception $e) {
+            // Если файловая система не настроена или возникла другая ошибка
+            return false;
+        }
+    }
+
+    /**
+     * Uploads the local security checker binary to storage
+     *
+     * @return bool
+     */
+    protected function uploadFileToStorage(): bool
+    {
+        try {
+            if (!file_exists(static::LOCAL_TMP_FILE)) {
+                return false;
+            }
+
+            $fileContent = file_get_contents(static::LOCAL_TMP_FILE);
+
+            $fileSystemContentTransfer = $this->createFileSystemContentTransfer(static::FILE_NAME);
+            $fileSystemContentTransfer->setContent($fileContent);
+
+            $this->getFileSystemService()->write($fileSystemContentTransfer);
+            return true;
+        } catch (\Exception $e) {
+            // Если файловая система не настроена или возникла другая ошибка
+            return false;
+        }
     }
 
     /**
@@ -396,7 +494,7 @@ class SecurityCheckerCommand extends Command
      */
     protected function runCommand(array $parameters): string
     {
-        $parameters = array_merge([static::FILE_NAME], $parameters);
+        $parameters = array_merge([static::LOCAL_TMP_FILE], $parameters);
 
         $process = new Process($parameters);
         $process->run();
@@ -527,5 +625,61 @@ class SecurityCheckerCommand extends Command
     protected function isArmArchitecture(string $hostType): bool
     {
         return in_array($hostType, [static::HOSTTYPE_ARM64, static::HOSTTYPE_AARCH64], true);
+    }
+
+    /**
+     * Creates a FileSystemContentTransfer with the security checker filesystem name and path
+     *
+     * @param string $path
+     *
+     * @return \Generated\Shared\Transfer\FileSystemContentTransfer
+     */
+    protected function createFileSystemContentTransfer(string $path): FileSystemContentTransfer
+    {
+        return (new FileSystemContentTransfer())
+            ->setFileSystemName(SecurityCheckerConstants::FILESYSTEM_NAME)
+            ->setPath($path);
+    }
+
+    /**
+     * Creates a FileSystemQueryTransfer with the security checker filesystem name and path
+     *
+     * @param string $path
+     *
+     * @return \Generated\Shared\Transfer\FileSystemQueryTransfer
+     */
+    protected function createFileSystemQueryTransfer(string $path): FileSystemQueryTransfer
+    {
+        return (new FileSystemQueryTransfer())
+            ->setFileSystemName(SecurityCheckerConstants::FILESYSTEM_NAME)
+            ->setPath($path);
+    }
+
+    /**
+     * Creates a FileSystemStreamTransfer with the security checker filesystem name and path
+     *
+     * @param string $path
+     *
+     * @return \Generated\Shared\Transfer\FileSystemStreamTransfer
+     */
+    protected function createFileSystemStreamTransfer(string $path): FileSystemStreamTransfer
+    {
+        return (new FileSystemStreamTransfer())
+            ->setFileSystemName(SecurityCheckerConstants::FILESYSTEM_NAME)
+            ->setPath($path);
+    }
+
+    /**
+     * Creates a FileSystemDeleteTransfer with the security checker filesystem name and path
+     *
+     * @param string $path
+     *
+     * @return \Generated\Shared\Transfer\FileSystemDeleteTransfer
+     */
+    protected function createFileSystemDeleteTransfer(string $path): FileSystemDeleteTransfer
+    {
+        return (new FileSystemDeleteTransfer())
+            ->setFileSystemName(SecurityCheckerConstants::FILESYSTEM_NAME)
+            ->setPath($path);
     }
 }
