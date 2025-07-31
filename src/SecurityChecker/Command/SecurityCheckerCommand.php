@@ -157,7 +157,7 @@ class SecurityCheckerCommand extends Command
     /**
      * @return \SecurityChecker\Dependency\Service\SecurityCheckerToFileSystemServiceInterface
      */
-    protected function getFileSystemService()
+    protected function getFileSystemService(): SecurityCheckerToFileSystemServiceInterface
     {
         if ($this->fileSystemService === null) {
             $fileSystemService = Locator::getInstance()->fileSystem()->service();
@@ -238,62 +238,138 @@ class SecurityCheckerCommand extends Command
      */
     protected function loadFile(OutputInterface $output): void
     {
+        // Step 1: Try to download the file from URL
+        if ($this->tryDownloadFromUrl($output)) {
+            // Step 2: If download successful and we're in CI environment with valid S3 config, save file to S3
+            if ($this->isCiEnvironment() && $this->isS3ConfigurationValid()) {
+                $this->uploadFileToStorage($output);
+            } elseif ($this->isCiEnvironment()) {
+                $output->writeln('<comment>CI environment detected but S3 configuration is incomplete - skipping upload to storage</comment>');
+            }
+            $this->changeFileMode();
+
+            return;
+        }
+
+        // Step 3: If URL download failed and we're in CI with valid S3 config, try to use cached file from storage
+        if ($this->isCiEnvironment() && $this->isS3ConfigurationValid() && $this->tryUseStorageFile($output)) {
+            $this->changeFileMode();
+
+            return;
+        } elseif ($this->isCiEnvironment() && !$this->isS3ConfigurationValid()) {
+            $output->writeln('<comment>CI environment detected but S3 configuration is incomplete - cannot use cached storage</comment>');
+        }
+
+        // Step 4: If nothing worked, throw an error
+        throw new RuntimeException(
+            'Failed to load security checker: unable to download from URL and no valid cached file available in storage.',
+        );
+    }
+
+    /**
+     * Check if we're running in CI environment
+     *
+     * @return bool
+     */
+    protected function isCiEnvironment(): bool
+    {
+        // Check for common CI environment variables
+        return (bool)getenv('CI') ||
+               (bool)getenv('GITHUB_ACTIONS') ||
+               (bool)getenv('GITLAB_CI') ||
+               (bool)getenv('JENKINS_URL') ||
+               (bool)getenv('TRAVIS') ||
+               (bool)getenv('CIRCLECI');
+    }
+
+    /**
+     * Check if S3 configuration is valid for CI environment
+     *
+     * @return bool
+     */
+    protected function isS3ConfigurationValid(): bool
+    {
+        return !empty(getenv('AWS_ACCESS_KEY_ID')) &&
+               !empty(getenv('AWS_SECRET_ACCESS_KEY')) &&
+               !empty(getenv('AWS_S3_BUCKET'));
+    }
+
+    /**
+     * Tries to download security checker file from URL
+     *
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
+     *
+     * @return bool
+     */
+    protected function tryDownloadFromUrl(OutputInterface $output): bool
+    {
         $urls = $this->getSecurityCheckerUrl();
 
         if (!$urls) {
             $urls = $this->getFallbackSecurityCheckerUrl();
             if (!$urls) {
-                throw new RuntimeException(
-                    static::EXCEPTION_MESSAGE_FAILED_TO_FIND_BINARY_URL .
-                    ' Both primary and fallback methods failed.',
-                );
+                $output->writeln('<comment>Failed to find security checker binary URL from both primary and fallback methods</comment>');
+
+                return false;
             }
         }
 
-        try {
-            $maxAttempts = 3;
-            $downloadErrors = [];
-            $downloadSuccess = false;
+        $maxAttempts = 3;
+        $downloadErrors = [];
 
-            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-                exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::LOCAL_TMP_FILE), $outputLines, $resultCode);
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $output->writeln("<info>Attempting to download security checker (attempt $attempt/$maxAttempts)...</info>");
 
-                if ($resultCode === static::CODE_SUCCESS) {
-                    $downloadSuccess = true;
+            exec(sprintf(static::WGET_COMMAND_PATTERN, $urls[0], static::LOCAL_TMP_FILE), $outputLines, $resultCode);
 
-                    break;
-                }
+            if ($resultCode === static::CODE_SUCCESS) {
+                $output->writeln('<info>Security checker downloaded successfully from URL</info>');
 
-                $downloadErrors = array_merge($downloadErrors, ["Attempt $attempt failed: " . implode(PHP_EOL, $outputLines)]);
-                sleep(5);
+                return true;
             }
 
-            if (!$downloadSuccess) {
-                throw new RuntimeException(
-                    "Failed to download security checker after $maxAttempts attempts. " .
-                    'Errors: ' . implode('; ', $downloadErrors),
-                );
-            }
-            // URL download successful, upload to storage for future use
-            // Неважно, удалось загрузить в хранилище или нет, мы уже успешно скачали файл
-            $this->uploadFileToStorage();
-        } catch (Exception $e) {
-            // URL download failed, try to use the cached file from storage if available
-            if (!$this->isValidCachedFile()) {
-                // Rethrow exception if no valid cached file exists
-                throw $e;
+            $downloadErrors[] = "Attempt $attempt failed: " . implode(PHP_EOL, $outputLines);
+            if ($attempt >= $maxAttempts) {
+                continue;
             }
 
-            $output->writeln('<info>Using cached security checker from storage</info>');
-            if (!$this->downloadFileFromStorage()) {
-                throw new RuntimeException(
-                    "Failed to download security checker from storage. " . $e->getMessage()
-                );
-            }
+            sleep(5); // Pause before next attempt
         }
 
-        // Set execution permissions on the local file
-        $this->changeFileMode();
+        $output->writeln('<comment>Failed to download security checker from URL after ' . $maxAttempts . ' attempts</comment>');
+        if ($output->isVerbose()) {
+            $output->writeln('<comment>Download errors: ' . implode('; ', $downloadErrors) . '</comment>');
+        }
+
+        return false;
+    }
+
+    /**
+     * Tries to use cached file from storage
+     *
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
+     *
+     * @return bool
+     */
+    protected function tryUseStorageFile(OutputInterface $output): bool
+    {
+        if (!$this->isValidCachedFile()) {
+            $output->writeln('<comment>No valid cached security checker file found in storage</comment>');
+
+            return false;
+        }
+
+        $output->writeln('<info>Found valid cached security checker in storage, attempting to download...</info>');
+
+        if (!$this->downloadFileFromStorage()) {
+            $output->writeln('<error>Failed to download security checker from storage</error>');
+
+            return false;
+        }
+
+        $output->writeln('<info>Successfully downloaded security checker from storage</info>');
+
+        return true;
     }
 
     /**
@@ -317,8 +393,8 @@ class SecurityCheckerCommand extends Command
             }
 
             return true;
-        } catch (\Exception $e) {
-            // Если файловая система не настроена или возникла другая ошибка, считаем что кеша нет
+        } catch (Exception $e) {
+            // If filesystem is not configured or another error occurred, consider no cache exists
             return false;
         }
     }
@@ -453,9 +529,10 @@ class SecurityCheckerCommand extends Command
             }
 
             file_put_contents(static::LOCAL_TMP_FILE, $fileContent);
+
             return true;
-        } catch (\Exception $e) {
-            // Если файловая система не настроена или возникла другая ошибка
+        } catch (Exception $e) {
+            // If filesystem is not configured or another error occurred
             return false;
         }
     }
@@ -463,14 +540,20 @@ class SecurityCheckerCommand extends Command
     /**
      * Uploads the local security checker binary to storage
      *
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
+     *
      * @return bool
      */
-    protected function uploadFileToStorage(): bool
+    protected function uploadFileToStorage(OutputInterface $output): bool
     {
         try {
             if (!file_exists(static::LOCAL_TMP_FILE)) {
+                $output->writeln('<comment>Local security checker file not found, skipping upload to storage</comment>');
+
                 return false;
             }
+
+            $output->writeln('<info>Uploading security checker to storage for future use...</info>');
 
             $fileContent = file_get_contents(static::LOCAL_TMP_FILE);
 
@@ -478,9 +561,21 @@ class SecurityCheckerCommand extends Command
             $fileSystemContentTransfer->setContent($fileContent);
 
             $this->getFileSystemService()->write($fileSystemContentTransfer);
+
+            $output->writeln('<info>Security checker successfully uploaded to storage</info>');
+
             return true;
-        } catch (\Exception $e) {
-            // Если файловая система не настроена или возникла другая ошибка
+        } catch (Exception $e) {
+            // If filesystem is not configured or another error occurred
+            $errorMessage = 'Failed to upload security checker to storage: ' . $e->getMessage();
+            if (!$this->isS3ConfigurationValid()) {
+                $errorMessage .= ' (S3 configuration incomplete - check AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET environment variables)';
+            }
+            $output->writeln('<comment>' . $errorMessage . '</comment>');
+            if ($output->isVerbose()) {
+                $output->writeln('<comment>This is not critical - the security checker will still work from the downloaded file</comment>');
+            }
+
             return false;
         }
     }
