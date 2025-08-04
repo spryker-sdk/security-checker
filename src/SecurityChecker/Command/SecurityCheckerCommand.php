@@ -256,7 +256,9 @@ class SecurityCheckerCommand extends Command
             $this->changeFileMode();
 
             return;
-        } elseif ($this->isCiEnvironment() && !$this->isS3ConfigurationValid()) {
+        }
+
+        if ($this->isCiEnvironment() && !$this->isS3ConfigurationValid()) {
             $output->writeln('<comment>CI environment detected but S3 configuration is incomplete - cannot use cached storage</comment>');
         }
 
@@ -274,12 +276,12 @@ class SecurityCheckerCommand extends Command
     protected function isCiEnvironment(): bool
     {
         // Check for common CI environment variables
-        return (bool)getenv('CI') ||
-               (bool)getenv('GITHUB_ACTIONS') ||
-               (bool)getenv('GITLAB_CI') ||
-               (bool)getenv('JENKINS_URL') ||
-               (bool)getenv('TRAVIS') ||
-               (bool)getenv('CIRCLECI');
+        return getenv('CI') ||
+               getenv('GITHUB_ACTIONS') ||
+               getenv('GITLAB_CI') ||
+               getenv('JENKINS_URL') ||
+               getenv('TRAVIS') ||
+               getenv('CIRCLECI');
     }
 
     /**
@@ -289,9 +291,9 @@ class SecurityCheckerCommand extends Command
      */
     protected function isS3ConfigurationValid(): bool
     {
-        return !empty(getenv('AWS_ACCESS_KEY_ID')) &&
-               !empty(getenv('AWS_SECRET_ACCESS_KEY')) &&
-               !empty(getenv('AWS_S3_BUCKET'));
+        return getenv('ROBOT_TESTS_ARTIFACTS_KEY') &&
+               getenv('ROBOT_TESTS_ARTIFACTS_SECRET') &&
+               getenv('ROBOT_TESTS_ARTIFACTS_BUCKET');
     }
 
     /**
@@ -569,7 +571,7 @@ class SecurityCheckerCommand extends Command
             // If filesystem is not configured or another error occurred
             $errorMessage = 'Failed to upload security checker to storage: ' . $e->getMessage();
             if (!$this->isS3ConfigurationValid()) {
-                $errorMessage .= ' (S3 configuration incomplete - check AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET environment variables)';
+                $errorMessage .= ' (S3 configuration incomplete - check ROBOT_TESTS_ARTIFACTS_KEY, ROBOT_TESTS_ARTIFACTS_SECRET, ROBOT_TESTS_ARTIFACTS_BUCKET environment variables)';
             }
             $output->writeln('<comment>' . $errorMessage . '</comment>');
             if ($output->isVerbose()) {
