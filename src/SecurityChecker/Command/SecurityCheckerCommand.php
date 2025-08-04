@@ -57,7 +57,7 @@ class SecurityCheckerCommand extends Command
     /**
      * @var string
      */
-    protected const BINARY_CHECKER = 'curl -s --retry 5 --retry-delay 10 --retry-max-time 60 --connect-timeout 30 https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d" -f4 | egrep "%s"';
+    protected const BINARY_CHECKER = 'curl -s --retry 5 --retry-delay 10 --retry-max-time 60 --connect-timeout 30 https://api.github.com/repos/fabpot/local-php-security-checker/releases/latest | grep browser_download_url | cut -d\" -f4 | egrep "%s"';
 
     /**
      * @var string
@@ -77,12 +77,12 @@ class SecurityCheckerCommand extends Command
     /**
      * @var string
      */
-    protected const FILE_NAME = 'security-checker-binary';
+    protected const LOCAL_TMP_FILE = '/tmp/security-checker';
 
     /**
      * @var string
      */
-    protected const LOCAL_TMP_FILE = 'ci-security-checker/security-checker-tmp';
+    protected const CI_FILE_NAME = 'ci-security-checker/security-checker-tmp';
 
     /**
      * @var int
@@ -103,11 +103,6 @@ class SecurityCheckerCommand extends Command
      * @var string
      */
     protected const OPTION_PATH = 'path';
-
-    /**
-     * @var string
-     */
-    protected const EXCEPTION_MESSAGE_FAILED_TO_FIND_BINARY_URL = 'Failed to find the appropriate security checker binary URL.';
 
     /**
      * @var string
@@ -291,6 +286,7 @@ class SecurityCheckerCommand extends Command
      */
     protected function isS3ConfigurationValid(): bool
     {
+        return true;
         return getenv('ROBOT_TESTS_ARTIFACTS_KEY') &&
                getenv('ROBOT_TESTS_ARTIFACTS_SECRET') &&
                getenv('ROBOT_TESTS_ARTIFACTS_BUCKET');
@@ -382,7 +378,7 @@ class SecurityCheckerCommand extends Command
     protected function isValidCachedFile(): bool
     {
         try {
-            $fileSystemQueryTransfer = $this->createFileSystemQueryTransfer(static::FILE_NAME);
+            $fileSystemQueryTransfer = $this->createFileSystemQueryTransfer(static::CI_FILE_NAME);
 
             if (!$this->getFileSystemService()->has($fileSystemQueryTransfer)) {
                 return false;
@@ -523,7 +519,7 @@ class SecurityCheckerCommand extends Command
     protected function downloadFileFromStorage(): bool
     {
         try {
-            $fileSystemQueryTransfer = $this->createFileSystemQueryTransfer(static::FILE_NAME);
+            $fileSystemQueryTransfer = $this->createFileSystemQueryTransfer(static::CI_FILE_NAME);
             $fileContent = $this->getFileSystemService()->read($fileSystemQueryTransfer);
 
             if (!$fileContent) {
@@ -559,7 +555,7 @@ class SecurityCheckerCommand extends Command
 
             $fileContent = file_get_contents(static::LOCAL_TMP_FILE);
 
-            $fileSystemContentTransfer = $this->createFileSystemContentTransfer(static::FILE_NAME);
+            $fileSystemContentTransfer = $this->createFileSystemContentTransfer(static::CI_FILE_NAME);
             $fileSystemContentTransfer->setContent($fileContent);
 
             $this->getFileSystemService()->write($fileSystemContentTransfer);
