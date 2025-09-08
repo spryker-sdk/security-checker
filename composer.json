@@ -37,5 +37,6 @@
         "cs-check": "phpcs --standard=vendor/spryker/code-sniffer/Spryker/ruleset.xml -v src/",
         "cs-fix": "phpcbf --standard=vendor/spryker/code-sniffer/Spryker/ruleset.xml -v src/",
         "stan": "phpstan analyze -l 8 src/"
-    }
+    },
+    "abandoned": true
 }

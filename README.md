@@ -8,6 +8,8 @@
 Checks security issues in your project dependencies.
 It wraps [FriendsOfPHP/security-advisories](https://github.com/FriendsOfPHP/security-advisories) and warns about any found issues.
 
+**DEPRECATED - This module is not continued at this point.**
+
 ## Installation
 ```
 composer require --dev spryker-sdk/security-checker
